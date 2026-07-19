@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Ambar group." />
+    <meta name="theme-color" content="#f4f3ef" />
+    <title>Ambar</title>
+    <style>
+      :root {
+        --paper: #f4f3ef;
+        --ink: #1e1e1b;
+        --muted: #8b8982;
+        --teal: #2f8881;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      a { color: inherit; text-decoration: none; }
+      .site-shell {
+        position: relative;
+        isolation: isolate;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        min-height: 100svh;
+        padding: clamp(1.5rem, 3vw, 3rem);
+      }
+      .hex-field {
+        position: fixed;
+        z-index: 0;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      .site-header, .site-footer {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .site-header { justify-content: flex-end; }
+      .contact-link {
+        position: relative;
+        padding: 0.35rem 0;
+        font-size: 0.7rem;
+        font-weight: 550;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .contact-link::after {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        height: 1px;
+        background: currentColor;
+        content: "";
+        opacity: 0.25;
+        transform: scaleX(0);
+        transform-origin: right;
+        transition: transform 240ms ease;
+      }
+      .contact-link:hover::after,
+      .contact-link:focus-visible::after { transform: scaleX(1); }
+      .contact-link:focus-visible {
+        outline: 1px solid var(--ink);
+        outline-offset: 0.45rem;
+      }
+      .hero {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        padding: 4rem 0;
+      }
+      .hero-copy { text-align: center; }
+      h1 {
+        margin: 0;
+        font-size: clamp(4rem, 8vw, 7.5rem);
+        font-weight: 440;
+        letter-spacing: -0.065em;
+        line-height: 0.9;
+      }
+      .title-dot {
+        color: var(--teal);
+        font-weight: 400;
+      }
+      .site-footer {
+        justify-content: flex-end;
+        color: var(--muted);
+        font-size: 0.62rem;
+        font-weight: 500;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .site-footer p { margin: 0; }
+
+      @media (max-width: 600px) {
+        .site-shell { padding: 1.35rem; }
+        h1 { font-size: clamp(3.8rem, 21vw, 6.5rem); }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="site-shell">
+      <canvas class="hex-field" aria-hidden="true"></canvas>
+
+      <header class="site-header">
+        <a
+          class="contact-link"
+          href="https://www.linkedin.com/company/ambarholdings"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Contact Ambar on LinkedIn (opens in a new tab)"
+        >Contact</a>
+      </header>
+
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <h1 id="hero-title">Ambar<span class="title-dot">.</span></h1>
+        </div>
+      </section>
+
+      <footer class="site-footer">
+        <p>© 2026 Ambar</p>
+      </footer>
+    </main>
+
+    <script>
+      (() => {
+        const canvas = document.querySelector(".hex-field");
+        const context = canvas.getContext("2d");
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+        const grid = {
+          radius: 13,
+          cells: [],
+        };
+
+        const pulses = [
+          { x: 0.16, y: 0.22, delay: 0, q: 0, r: 0 },
+          { x: 0.82, y: 0.76, delay: 4800, q: 0, r: 0 },
+          { x: 0.76, y: 0.18, delay: 9600, q: 0, r: 0 },
+        ];
+
+        const cycle = 15000;
+        const activeTime = 9200;
+        let width = 0;
+        let height = 0;
+        let maximumRing = 0;
+        let frame = 0;
+        let lastRender = 0;
+
+        const axialRound = (q, r) => {
+          const s = -q - r;
+          let roundedQ = Math.round(q);
+          let roundedR = Math.round(r);
+          let roundedS = Math.round(s);
+          const differenceQ = Math.abs(roundedQ - q);
+          const differenceR = Math.abs(roundedR - r);
+          const differenceS = Math.abs(roundedS - s);
+
+          if (differenceQ > differenceR && differenceQ > differenceS) {
+            roundedQ = -roundedR - roundedS;
+          } else if (differenceR > differenceS) {
+            roundedR = -roundedQ - roundedS;
+          } else {
+            roundedS = -roundedQ - roundedR;
+          }
+
+          return { q: roundedQ, r: roundedR };
+        };
+
+        const pixelToAxial = (x, y) =>
+          axialRound(
+            ((Math.sqrt(3) / 3) * x - y / 3) / grid.radius,
+            ((2 / 3) * y) / grid.radius,
+          );
+
+        const hexDistance = (cell, pulse) => {
+          const differenceQ = cell.q - pulse.q;
+          const differenceR = cell.r - pulse.r;
+          return (
+            Math.abs(differenceQ) +
+            Math.abs(differenceR) +
+            Math.abs(differenceQ + differenceR)
+          ) / 2;
+        };
+
+        const appendOwnedEdges = (cell) => {
+          for (let edge = 0; edge < 3; edge += 1) {
+            const start = cell.points[edge];
+            const end = cell.points[edge + 1];
+            context.moveTo(start.x, start.y);
+            context.lineTo(end.x, end.y);
+          }
+        };
+
+        const buildGrid = () => {
+          grid.cells = [];
+          const horizontalStep = Math.sqrt(3) * grid.radius;
+          const verticalStep = grid.radius * 1.5;
+          const margin = grid.radius * 2;
+          const minimumR = Math.floor(-margin / verticalStep) - 1;
+          const maximumR = Math.ceil((height + margin) / verticalStep) + 1;
+
+          for (let r = minimumR; r <= maximumR; r += 1) {
+            const minimumQ = Math.floor(-margin / horizontalStep - r / 2) - 1;
+            const maximumQ = Math.ceil((width + margin) / horizontalStep - r / 2) + 1;
+
+            for (let q = minimumQ; q <= maximumQ; q += 1) {
+              const x = horizontalStep * (q + r / 2);
+              const y = verticalStep * r;
+              const points = [];
+
+              for (let point = 0; point < 6; point += 1) {
+                const angle = -Math.PI / 2 + point * Math.PI / 3;
+                points.push({
+                  x: x + Math.cos(angle) * grid.radius,
+                  y: y + Math.sin(angle) * grid.radius,
+                });
+              }
+
+              grid.cells.push({ q, r, points });
+            }
+          }
+
+          for (const pulse of pulses) {
+            const source = pixelToAxial(pulse.x * width, pulse.y * height);
+            pulse.q = source.q;
+            pulse.r = source.r;
+          }
+
+          maximumRing = Math.ceil(
+            Math.hypot(width, height) / (grid.radius * 1.45),
+          );
+        };
+
+        const pulseStrength = (cell, now) => {
+          let strength = 0;
+
+          for (const pulse of pulses) {
+            const localTime = ((now - pulse.delay) % cycle + cycle) % cycle;
+            if (localTime > activeTime) continue;
+
+            const progress = localTime / activeTime;
+            const eased = 1 - Math.pow(1 - progress, 2);
+            const ring = eased * maximumRing;
+            const distance = hexDistance(cell, pulse);
+            const band = 1.4 + progress * 1.8;
+            const wave = Math.exp(-0.5 * Math.pow((distance - ring) / band, 2));
+            const envelope = Math.pow(Math.sin(Math.PI * progress), 0.45);
+            strength = Math.max(strength, wave * envelope);
+          }
+
+          return strength;
+        };
+
+        const applyQuietZone = () => {
+          const outerRadius = Math.hypot(width, height) / 2;
+          const fade = context.createRadialGradient(
+            width / 2,
+            height / 2,
+            0,
+            width / 2,
+            height / 2,
+            outerRadius,
+          );
+          fade.addColorStop(0, "rgba(0, 0, 0, 0.94)");
+          fade.addColorStop(0.22, "rgba(0, 0, 0, 0.82)");
+          fade.addColorStop(0.52, "rgba(0, 0, 0, 0.30)");
+          fade.addColorStop(0.84, "rgba(0, 0, 0, 0.02)");
+          fade.addColorStop(1, "rgba(0, 0, 0, 0)");
+
+          context.save();
+          context.globalCompositeOperation = "destination-out";
+          context.fillStyle = fade;
+          context.fillRect(0, 0, width, height);
+          context.restore();
+        };
+
+        const render = (now = 0) => {
+          if (!reducedMotion.matches && now - lastRender < 1000 / 30) {
+            frame = requestAnimationFrame(render);
+            return;
+          }
+          lastRender = now;
+
+          context.clearRect(0, 0, width, height);
+          context.lineJoin = "round";
+          context.lineCap = "round";
+
+          context.beginPath();
+          for (const cell of grid.cells) appendOwnedEdges(cell);
+          context.lineWidth = 0.58;
+          context.strokeStyle = "rgba(30, 30, 27, 0.15)";
+          context.stroke();
+
+          if (!reducedMotion.matches) {
+            for (const cell of grid.cells) {
+              const pulse = pulseStrength(cell, now);
+              if (pulse < 0.012) continue;
+
+              context.beginPath();
+              appendOwnedEdges(cell);
+              context.lineWidth = 0.64 + pulse * 0.34;
+              context.strokeStyle = `rgba(47, 136, 129, ${pulse * 0.66})`;
+              context.stroke();
+            }
+          }
+
+          applyQuietZone();
+
+          if (!reducedMotion.matches) frame = requestAnimationFrame(render);
+        };
+
+        const resize = () => {
+          cancelAnimationFrame(frame);
+          const ratio = Math.min(window.devicePixelRatio || 1, 2);
+          width = window.innerWidth;
+          height = window.innerHeight;
+          canvas.width = Math.round(width * ratio);
+          canvas.height = Math.round(height * ratio);
+          canvas.style.width = `${width}px`;
+          canvas.style.height = `${height}px`;
+          context.setTransform(ratio, 0, 0, ratio, 0, 0);
+          buildGrid();
+          render(performance.now());
+        };
+
+        window.addEventListener("resize", resize, { passive: true });
+        reducedMotion.addEventListener("change", resize);
+        resize();
+      })();
+    </script>
+  </body>
+</html>
